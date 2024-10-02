@@ -1,4 +1,4 @@
-resource "google_sql_database_instance" "default" {
+resource "google_sql_database_instance" "main" {
   provider            = google-beta
   project             = var.project_id
   name                = local.master_instance_name
@@ -13,6 +13,14 @@ resource "google_sql_database_instance" "default" {
     activation_policy           = var.activation_policy
     availability_type           = var.availability_type
     deletion_protection_enabled = var.deletion_protection_enabled
+
+    dynamic "database_flags" {
+      for_each = var.database_flags
+      content {
+        name  = lookup(database_flags.value, "name", null)
+        value = lookup(database_flags.value, "value", null)
+      }
+    }
 
     dynamic "backup_configuration" {
       for_each = [var.backup_configuration]
@@ -66,15 +74,6 @@ resource "google_sql_database_instance" "default" {
             value           = lookup(authorized_networks.value, "value", null)
           }
         }
-
-        dynamic "psc_config" {
-          for_each = ip_configuration.value.psc_enabled ? ["psc_enabled"] : []
-          content {
-            psc_enabled               = ip_configuration.value.psc_enabled
-            allowed_consumer_projects = ip_configuration.value.psc_allowed_consumer_projects
-          }
-        }
-
       }
     }
 
@@ -106,94 +105,67 @@ resource "google_sql_database_instance" "default" {
   }
 }
 
-resource "google_sql_database" "default" {
-  count      = var.enable_default_db ? 1 : 0
-  name       = var.db_name
-  project    = var.project_id
-  instance   = google_sql_database_instance.default.name
-  charset    = var.db_charset
-  collation  = var.db_collation
-  depends_on = [google_sql_database_instance.default]
-}
 
-resource "google_sql_database" "additional_databases" {
-  for_each   = local.databases
-  project    = var.project_id
-  name       = each.value.name
-  charset    = lookup(each.value, "charset", null)
-  collation  = lookup(each.value, "collation", null)
-  instance   = google_sql_database_instance.default.name
-  depends_on = [google_sql_database_instance.default]
-}
 
-resource "random_password" "user-password" {
-  count = var.enable_default_user ? 1 : 0
-  keepers = {
-    name = google_sql_database_instance.default.name
-  }
-  length     = 16
-  depends_on = [google_sql_database_instance.default]
-
-  lifecycle {
-    ignore_changes = [
-      min_lower, min_upper, min_numeric
-    ]
-  }
-}
-
-resource "random_password" "additional_passwords" {
-  for_each = local.users
-  keepers = {
-    name = google_sql_database_instance.default.name
-  }
-  length     = 16
-  depends_on = [google_sql_database_instance.default]
-
-  lifecycle {
-    ignore_changes = [
-      min_lower, min_upper, min_numeric
-    ]
-  }
-}
-
-resource "google_sql_user" "default" {
-  count    = var.enable_default_user ? 1 : 0
-  name     = var.user_name
+# Databases
+resource "google_sql_database" "databases" {
+  for_each = toset(var.databases)
   project  = var.project_id
-  instance = google_sql_database_instance.default.name
-  host     = var.user_host
-  password = var.user_password == "" ? random_password.user-password[0].result : var.user_password
-  depends_on = [
-    google_sql_database_instance.default,
-    google_sql_database_instance.replicas,
-  ]
+  name     = each.key
+  instance = google_sql_database_instance.main.name
 }
 
-resource "google_sql_user" "additional_users" {
-  for_each = local.users
-  project  = var.project_id
-  name     = each.value.name
-  password = each.value.random_password ? random_password.additional_passwords[each.value.name].result : each.value.password
-  host     = each.value.host == null ? var.user_host : each.value.host
-  instance = google_sql_database_instance.default.name
-  type     = coalesce(each.value.type, "BUILT_IN")
-  depends_on = [
-    google_sql_database_instance.default,
-    google_sql_database_instance.replicas,
-  ]
+# Users
+# Root User
+resource "google_sql_user" "root" {
+  name     = "root"
+  instance = google_sql_database_instance.main.name
+  password = random_password.random_root_password.result
 }
 
-variable "user_host" {
-  description = "The host for the default user"
-  type        = string
-  default     = "%"
+resource "random_password" "random_root_password" {
+  length     = 16
+  special    = false
+  depends_on = [google_sql_database_instance.main]
 }
 
-resource "google_sql_user" "iam_account" {
+# IAM Users
+resource "google_sql_user" "iam_accounts" {
   for_each = local.iam_users
 
   project  = var.project_id
   name     = each.value.email
-  instance = google_sql_database_instance.default.name
+  instance = google_sql_database_instance.main.name
   type     = each.value.is_account_sa ? "CLOUD_IAM_SERVICE_ACCOUNT" : "CLOUD_IAM_USER"
 }
+
+# IAM Groups
+resource "google_sql_user" "iam_groups" {
+  for_each = toset(var.iam_groups)
+
+  project  = var.project_id
+  name     = each.key
+  instance = google_sql_database_instance.main.name
+  type     = "CLOUD_IAM_GROUP"
+}
+
+# Postgres Built-in Users
+resource "google_sql_user" "users" {
+  for_each = local.users
+  project  = var.project_id
+  name     = each.value.name
+  password = each.value.random_password ? random_password.random_passwords[each.value.name].result : each.value.password
+  instance = google_sql_database_instance.main.name
+  depends_on = [
+    google_sql_database_instance.main
+  ]
+}
+
+# Random Passwords
+resource "random_password" "random_passwords" {
+  for_each   = local.users
+  length     = 16
+  special    = false
+  depends_on = [google_sql_database_instance.main]
+}
+

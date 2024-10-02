@@ -2,13 +2,13 @@ locals {
   master_instance_name     = "${var.name}-${random_id.suffix.hex}"
   ip_configuration_enabled = length(keys(var.ip_configuration)) > 0 ? true : false
 
+  is_postgres   = can(regex("^POSTGRES", var.database_version))
+  iam_auth_flag = local.is_postgres ? "cloudsql.iam_authentication" : "cloudsql_iam_authentication"
   ip_configurations = {
     enabled  = var.ip_configuration
     disabled = {}
   }
-
-  databases = { for db in var.additional_databases : db.name => db }
-  users     = { for u in var.additional_users : u.name => u }
+  users = { for u in var.users : u.name => u }
   iam_users = {
     for user in var.iam_users : user.id => {
       email         = user.email,

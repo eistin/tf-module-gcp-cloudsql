@@ -36,8 +36,6 @@ variable "ip_configuration" {
     private_network                               = optional(string)
     allocated_ip_range                            = optional(string)
     enable_private_path_for_google_cloud_services = optional(bool, false)
-    psc_enabled                                   = optional(bool, false)
-    psc_allowed_consumer_projects                 = optional(list(string), [])
   })
   default = {}
 }
@@ -178,75 +176,34 @@ variable "maintenance_window_update_track" {
   default     = "canary"
 }
 
-/******************************************
-  DB RESSOURCES
- *****************************************/
-# --- DATABASES
-variable "enable_default_db" {
-  description = "Enable or disable the creation of the default database"
-  type        = bool
-  default     = true
-}
-
-variable "db_name" {
-  description = "The name of the default database to create"
-  type        = string
-  default     = "default"
-}
-
-variable "db_charset" {
-  description = "The charset for the default database"
-  type        = string
-  default     = ""
-}
-
-variable "db_collation" {
-  description = "The collation for the default database. Example: 'utf8_general_ci'"
-  type        = string
-  default     = ""
-}
-
-variable "additional_databases" {
-  description = "A list of databases to be created in your cluster"
+variable "database_flags" {
+  description = "List of Cloud SQL flags that are applied to the database server. See [more details](https://cloud.google.com/sql/docs/mysql/flags)"
   type = list(object({
-    name      = string
-    charset   = string
-    collation = string
+    name  = string
+    value = string
   }))
   default = []
 }
 
-# --- USERS
-variable "enable_default_user" {
-  description = "Enable or disable the creation of the default user"
-  type        = bool
-  default     = true
+/******************************************
+  DATABASE RESOURCES
+ *****************************************/
+variable "databases" {
+  description = "A list of databases to be created in your cloudsql"
+  type        = list(string)
+  default     = []
 }
 
-variable "user_name" {
-  description = "The name of the default user"
-  type        = string
-  default     = "default"
-}
-
-variable "user_password" {
-  description = "The password for the default user. If not set, a random one will be generated and available in the generated_user_password output variable."
-  type        = string
-  default     = ""
-}
-
-variable "additional_users" {
+variable "users" {
   description = "A list of users to be created in your cluster. A random password would be set for the user if the `random_password` variable is set."
   type = list(object({
     name            = string
-    password        = string
-    random_password = bool
-    type            = string
-    host            = string
+    password        = optional(string)
+    random_password = optional(bool)
   }))
   default = []
   validation {
-    condition     = length([for user in var.additional_users : false if user.random_password == true && (user.password != null && user.password != "")]) == 0
+    condition     = length([for user in var.users : false if user.random_password == true && (user.password != null && user.password != "")]) == 0
     error_message = "You cannot set both password and random_password, choose one of them."
   }
 }
@@ -260,74 +217,10 @@ variable "iam_users" {
   default = []
 }
 
-/******************************************
-  READ REPLICA
- *****************************************/
-variable "read_replicas" {
-  description = "List of read replicas to create. Encryption key is required for replica in different region. For replica in same region as master set encryption_key_name = null"
-  type = list(object({
-    name                  = string
-    name_override         = optional(string)
-    tier                  = optional(string)
-    edition               = optional(string)
-    availability_type     = optional(string)
-    zone                  = optional(string)
-    disk_type             = optional(string)
-    disk_autoresize       = optional(bool)
-    disk_autoresize_limit = optional(number)
-    disk_size             = optional(string)
-    user_labels           = map(string)
-    database_flags = list(object({
-      name  = string
-      value = string
-    }))
-    backup_configuration = optional(object({
-      binary_log_enabled             = bool
-      transaction_log_retention_days = string
-    }))
-    insights_config = optional(object({
-      query_plans_per_minute  = number
-      query_string_length     = number
-      record_application_tags = bool
-      record_client_address   = bool
-    }))
-    ip_configuration = object({
-      authorized_networks                           = optional(list(map(string)), [])
-      ipv4_enabled                                  = optional(bool)
-      private_network                               = optional(string, )
-      require_ssl                                   = optional(bool)
-      allocated_ip_range                            = optional(string)
-      enable_private_path_for_google_cloud_services = optional(bool, false)
-      psc_enabled                                   = optional(bool, false)
-      psc_allowed_consumer_projects                 = optional(list(string), [])
-    })
-    encryption_key_name = optional(string)
-  }))
-  default = []
-}
-
-variable "replica_database_version" {
-  description = "The read replica database version to use. This var should only be used during a database update. The update sequence 1. read-replica 2. master, setting this to an updated version will cause the replica to update, then you may update the master with the var database_version and remove this field after update is complete"
-  type        = string
-  default     = ""
-}
-
-variable "read_replica_deletion_protection" {
-  description = "Used to block Terraform from deleting replica SQL Instances."
-  type        = bool
-  default     = false
-}
-
-variable "read_replica_deletion_protection_enabled" {
-  description = "Enables protection of a read replica from accidental deletion across all surfaces (API, gcloud, Cloud Console and Terraform)."
-  type        = bool
-  default     = false
-}
-
-variable "read_replica_name_suffix" {
-  description = "The optional suffix to add to the read instance name"
-  type        = string
-  default     = ""
+variable "iam_groups" {
+  description = "A list of IAM groups to give access to your CloudSQL instance"
+  type        = list(string)
+  default     = []
 }
 
 /******************************************
