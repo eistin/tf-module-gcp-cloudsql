@@ -118,9 +118,10 @@ resource "google_sql_database" "databases" {
 # Users
 # Root User
 resource "google_sql_user" "root" {
-  name     = "root"
-  instance = google_sql_database_instance.main.name
-  password = random_password.random_root_password.result
+  project     = var.project_id
+  name        = "root"
+  instance    = google_sql_database_instance.main.name
+  password_wo = random_password.random_root_password.result
 }
 
 resource "random_password" "random_root_password" {
@@ -151,11 +152,11 @@ resource "google_sql_user" "iam_groups" {
 
 # Postgres Built-in Users
 resource "google_sql_user" "users" {
-  for_each = local.users
-  project  = var.project_id
-  name     = each.value.name
-  password = each.value.random_password ? random_password.random_passwords[each.value.name].result : each.value.password
-  instance = google_sql_database_instance.main.name
+  for_each    = local.users
+  project     = var.project_id
+  name        = each.value.name
+  password_wo = coalesce(each.value.random_password, false) ? random_password.random_passwords[each.value.name].result : each.value.password
+  instance    = google_sql_database_instance.main.name
   depends_on = [
     google_sql_database_instance.main
   ]

@@ -68,7 +68,7 @@ output "user_passwords" {
   value = {
     for name, user in local.users : name => {
       name     = user.name
-      password = user.random_password ? random_password.random_passwords[name].result : user.password
+      password = coalesce(user.random_password, false) ? random_password.random_passwords[name].result : user.password
     }
   }
   sensitive = true
